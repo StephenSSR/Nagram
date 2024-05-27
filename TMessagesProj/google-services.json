@@ -1,26 +1,36 @@
 {
   "project_info": {
-    "project_number": "941938467697",
-    "project_id": "nagram-bd791",
-    "storage_bucket": "nagram-bd791.appspot.com"
+    "project_number": "213675670507",
+    "project_id": "nagram-6066a",
+    "storage_bucket": "nagram-6066a.appspot.com"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:941938467697:android:12052e82a152709d208cd0",
+        "mobilesdk_app_id": "1:213675670507:android:242fc81213c858ba1d37ae",
         "android_client_info": {
           "package_name": "xyz.nextalone.nagram"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "454087305870-i68bog5e0h2uq2553friqpl7ullqnuuo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyAjqegx8I3aPI635YeaYyjTWxr7zX-kNVM"
+          "current_key": "AIzaSyDWPJn3MyJbysRSF1WAXUvOPWwaUWlVpWQ"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "454087305870-i68bog5e0h2uq2553friqpl7ullqnuuo.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
