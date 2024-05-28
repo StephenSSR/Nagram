@@ -77,7 +77,6 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.ImageSpan;
 import android.text.style.URLSpan;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.util.Pair;
 import android.util.Property;
 import android.util.SparseArray;
@@ -100,7 +99,6 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.animation.DecelerateInterpolator;
 import android.view.inputmethod.EditorInfo;
-import android.widget.DatePicker;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -169,13 +167,11 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.NotificationsController;
-import org.telegram.messenger.PushListenerController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SecretChatHelper;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
-import org.telegram.messenger.TranslateController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
@@ -274,7 +270,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -289,7 +284,9 @@ import tw.nekomimi.nekogram.BackButtonMenuRecent;
 import tw.nekomimi.nekogram.DialogConfig;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.NekoXConfig;
+import tw.nekomimi.nekogram.helpers.AyuFilter;
 import tw.nekomimi.nekogram.helpers.remote.EmojiHelper;
+import tw.nekomimi.nekogram.helpers.remote.PagePreviewRulesHelper;
 import tw.nekomimi.nekogram.parts.MessageTransKt;
 import tw.nekomimi.nekogram.parts.PollTransUpdatesKt;
 import tw.nekomimi.nekogram.settings.NekoSettingsActivity;
@@ -302,7 +299,6 @@ import tw.nekomimi.nekogram.utils.EnvUtil;
 import tw.nekomimi.nekogram.utils.PGPUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import tw.nekomimi.nekogram.utils.TelegramUtil;
-import tw.nekomimi.nekogram.utils.VibrateUtil;
 import xyz.nextalone.nagram.NaConfig;
 import xyz.nextalone.nagram.helper.DoubleTap;
 import xyz.nextalone.nagram.helper.MessageHelper;
@@ -13375,10 +13371,15 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
 
             final TLRPC.TL_messages_getWebPagePreview req = new TLRPC.TL_messages_getWebPagePreview();
-            if (textToCheck instanceof String) {
-                req.message = (String) textToCheck;
-            } else {
-                req.message = textToCheck.toString();
+            // na: page preview rules
+            try {
+                req.message = PagePreviewRulesHelper.getInstance().doRegex(textToCheck);
+            } catch (Exception ignored) {
+                if (textToCheck instanceof String) {
+                    req.message = (String) textToCheck;
+                } else {
+                    req.message = textToCheck.toString();
+                }
             }
             if (foundWebPage != null && req.message.equals(foundWebPage.displayedText)) {
                 return;
@@ -30405,7 +30406,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         updatePinnedMessageView(true);
         updateVisibleRows();
 
-        if (!messageObject.scheduled && !messageObject.isQuickReply() && !getUserConfig().getCurrentUser().bot) {
+        if (!messageObject.scheduled && !messageObject.isQuickReply() && getUserConfig().isClientActivated() && !getUserConfig().getCurrentUser().bot) {
             TLRPC.TL_messages_getMessageEditData req = new TLRPC.TL_messages_getMessageEditData();
             req.peer = getMessagesController().getInputPeer(dialog_id);
             req.id = messageObject.getId();
@@ -30639,6 +30640,9 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
             case OPTION_FORWARD: {
                 noForwardQuote = false; //fuck
+                if (messagePreviewParams != null) {
+                    messagePreviewParams.setHideForwardSendersName(noForwardQuote);
+                }
                 forwardingMessage = selectedObject;
                 forwardingMessageGroup = selectedObjectGroup;
                 Bundle args = new Bundle();
@@ -33843,6 +33847,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 });
             } else if (viewType == 4) {
                 view = new ChatLoadingCell(mContext, contentView, themeDelegate);
+            } else if (viewType == -1000) {
+                view = new View(mContext);
             }
             view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
             return new RecyclerListView.Holder(view);
@@ -34325,7 +34331,29 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 } else {
                     messages = ChatActivity.this.messages;
                 }
-                return messages.get(position - messagesStartRow).contentType;
+
+                var msg = messages.get(position - messagesStartRow);
+
+                // --- AyuGram hook
+                if (NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && (NaConfig.INSTANCE.getRegexFiltersEnableInChats().Bool() || ChatObject.isChannel(currentChat))) {
+                    var group = getGroup(msg.getGroupId());
+                    var msgToCheck = group == null ? msg : group.findPrimaryMessageObject();
+
+                    if (AyuFilter.isFiltered(msgToCheck, group)) {
+                        return -1000;
+                    }
+                }
+                // --- AyuGram hook
+                // --- NaGram hook
+                if (msg != null && msg.messageOwner != null && msg.messageOwner.hide) {
+                    return -1000;
+                }
+                if (NekoConfig.ignoreBlocked.Bool() && msg != null && MessagesController.getInstance(currentAccount).blockePeers.indexOfKey(msg.getFromChatId()) >= 0) {
+                    return -1000;
+                }
+                // --- NaGram hook
+
+                return msg.contentType;
             } else if (position == botInfoRow) {
                 return 3;
             }
@@ -39040,6 +39068,9 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         // should hide shit action bar after done
         if (id == nkbtn_forward_noquote) {
             noForwardQuote = id == nkbtn_forward_noquote;
+            if (messagePreviewParams != null) {
+                messagePreviewParams.setHideForwardSendersName(noForwardQuote);
+            }
             openForward(true);
         } else if (id == nkactionbarbtn_reply) {
             MessageObject messageObject = null;
@@ -39088,6 +39119,9 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 int msgId = messages.get(i).getId();
                 if (NekoConfig.ignoreBlocked.Bool() && getMessagesController().blockePeers.indexOfKey(messages.get(i).getSenderId()) >= 0)
                     continue;
+                if (NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && AyuFilter.isFiltered(messages.get(i), null)) {
+                    continue;
+                }
                 if (msgId > begin && msgId < end && selectedMessagesIds[0].indexOfKey(msgId) < 0) {
                     MessageObject message = messages.get(i);
                     int type = getMessageType(message);
@@ -39265,6 +39299,9 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
             case nkbtn_forward_noquote: {
                 noForwardQuote = true;
+                if (messagePreviewParams != null) {
+                    messagePreviewParams.setHideForwardSendersName(noForwardQuote);
+                }
                 forwardingMessage = selectedObject;
                 forwardingMessageGroup = selectedObjectGroup;
                 Bundle args = new Bundle();
