@@ -171,6 +171,7 @@ import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SeekBar;
 import org.telegram.ui.Components.SeekBarView;
 import org.telegram.ui.Components.ShareAlert;
+import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.Components.StaticLayoutEx;
 import org.telegram.ui.Components.TableLayout;
 import org.telegram.ui.Components.TextPaintImageReceiverSpan;
@@ -201,6 +202,14 @@ import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 
 public class ArticleViewer implements NotificationCenter.NotificationCenterDelegate {
+
+    public final boolean isSheet;
+    public final ArticleViewer.Sheet sheet;
+
+    public ArticleViewer(boolean sheet, Context context) {
+        this.isSheet = sheet;
+        this.sheet = sheet ? new ArticleViewer.Sheet(context) : null;
+    }
 
     public Activity parentActivity;
     private BaseFragment parentFragment;
@@ -340,11 +349,15 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             synchronized (ArticleViewer.class) {
                 localInstance = Instance;
                 if (localInstance == null) {
-                    Instance = localInstance = new ArticleViewer();
+                    Instance = localInstance = new ArticleViewer(false, null);
                 }
             }
         }
         return localInstance;
+    }
+
+    public static ArticleViewer makeSheet(Context context) {
+        return new ArticleViewer(true, context);
     }
 
     public static boolean hasInstance() {
@@ -372,7 +385,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         private TLRPC.TL_pageBlockDetails parent;
     }
 
-    private class TL_pageBlockListParent extends TLRPC.PageBlock {
+    private static class TL_pageBlockListParent extends TLRPC.PageBlock {
         private TLRPC.TL_pageBlockList pageBlockList;
         private ArrayList<TL_pageBlockListItem> items = new ArrayList<>();
         private int maxNumWidth;
@@ -381,7 +394,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         private int level;
     }
 
-    private class TL_pageBlockListItem extends TLRPC.PageBlock {
+    private static class TL_pageBlockListItem extends TLRPC.PageBlock {
         private TL_pageBlockListParent parent;
         private TLRPC.PageBlock blockItem;
         private TLRPC.RichText textItem;
@@ -390,7 +403,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         private int index = Integer.MAX_VALUE;
     }
 
-    private class TL_pageBlockOrderedListParent extends TLRPC.PageBlock {
+    private static class TL_pageBlockOrderedListParent extends TLRPC.PageBlock {
         private TLRPC.TL_pageBlockOrderedList pageBlockOrderedList;
         private ArrayList<TL_pageBlockOrderedListItem> items = new ArrayList<>();
         private int maxNumWidth;
@@ -399,7 +412,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         private int level;
     }
 
-    private class TL_pageBlockOrderedListItem extends TLRPC.PageBlock {
+    private static class TL_pageBlockOrderedListItem extends TLRPC.PageBlock {
         private TL_pageBlockOrderedListParent parent;
         private TLRPC.PageBlock blockItem;
         private TLRPC.RichText textItem;
@@ -3079,7 +3092,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
 
     public void setParentActivity(Activity activity, BaseFragment fragment) {
         parentFragment = fragment;
-        currentAccount = UserConfig.selectedAccount;
+        currentAccount = fragment != null ? fragment.getCurrentAccount() : UserConfig.selectedAccount;
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingProgressDidChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingDidReset);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
@@ -3677,7 +3690,11 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 } else {
                     webPageUrl = adapter[0].currentPage.url;
                 }
-                Browser.openUrl(parentActivity, webPageUrl, true, false);
+                if (parentActivity == null || parentActivity.isFinishing()) return;
+                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(webPageUrl));
+                intent.putExtra(android.provider.Browser.EXTRA_CREATE_NEW_TAB, true);
+                intent.putExtra(android.provider.Browser.EXTRA_APPLICATION_ID, parentActivity.getPackageName());
+                parentActivity.startActivity(intent);
             } else if (id == settings_item) {
                 BottomSheet.Builder builder = new BottomSheet.Builder(parentActivity);
                 builder.setApplyTopPadding(false);
@@ -4367,7 +4384,10 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
 
         lastInsets = null;
-        if (!isVisible) {
+        if (sheet != null) {
+            AndroidUtilities.removeFromParent(windowView);
+            sheet.windowView.addView(windowView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        } else if (!isVisible) {
             WindowManager wm = (WindowManager) parentActivity.getSystemService(Context.WINDOW_SERVICE);
             if (attachedToWindow) {
                 try {
@@ -7173,7 +7193,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                     }
 
                     if (currentBlock.date != 0) {
-                        dateLayout = createLayoutForText(this, LocaleController.getInstance().chatFullDate.format((long) currentBlock.date * 1000), null, width - AndroidUtilities.dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), AndroidUtilities.dp(29), currentBlock, parentAdapter);
+                        dateLayout = createLayoutForText(this, LocaleController.getInstance().getChatFullDate().format((long) currentBlock.date * 1000), null, width - AndroidUtilities.dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), AndroidUtilities.dp(29), currentBlock, parentAdapter);
                     } else {
                         dateLayout = null;
                     }
@@ -9724,11 +9744,11 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             }
             String description;
             if (item.published_date != 0 && !TextUtils.isEmpty(item.author)) {
-                description = LocaleController.formatString("ArticleDateByAuthor", R.string.ArticleDateByAuthor, LocaleController.getInstance().chatFullDate.format((long) item.published_date * 1000), item.author);
+                description = LocaleController.formatString("ArticleDateByAuthor", R.string.ArticleDateByAuthor, LocaleController.getInstance().getChatFullDate().format((long) item.published_date * 1000), item.author);
             } else if (!TextUtils.isEmpty(item.author)) {
                 description = LocaleController.formatString("ArticleByAuthor", R.string.ArticleByAuthor, item.author);
             } else if (item.published_date != 0) {
-                description = LocaleController.getInstance().chatFullDate.format((long) item.published_date * 1000);
+                description = LocaleController.getInstance().getChatFullDate().format((long) item.published_date * 1000);
             } else if (!TextUtils.isEmpty(item.description)) {
                 description = item.description;
             } else {
@@ -11009,11 +11029,11 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 }
                 try {
                     if (currentBlock.published_date != 0 && !TextUtils.isEmpty(author)) {
-                        text = LocaleController.formatString("ArticleDateByAuthor", R.string.ArticleDateByAuthor, LocaleController.getInstance().chatFullDate.format((long) currentBlock.published_date * 1000), author);
+                        text = LocaleController.formatString("ArticleDateByAuthor", R.string.ArticleDateByAuthor, LocaleController.getInstance().getChatFullDate().format((long) currentBlock.published_date * 1000), author);
                     } else if (!TextUtils.isEmpty(author)) {
                         text = LocaleController.formatString("ArticleByAuthor", R.string.ArticleByAuthor, author);
                     } else {
-                        text = LocaleController.getInstance().chatFullDate.format((long) currentBlock.published_date * 1000);
+                        text = LocaleController.getInstance().getChatFullDate().format((long) currentBlock.published_date * 1000);
                     }
                 } catch (Exception e) {
                     FileLog.e(e);
@@ -11901,4 +11921,79 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             return null;
         }
     }
+
+    public class Sheet implements BaseFragment.AttachedSheet {
+
+        public WindowView windowView;
+
+        public Sheet(Context context) {
+
+            windowView = new WindowView(context);
+
+        }
+
+        public WindowView getWindowView() {
+            return windowView;
+        }
+
+        @Override
+        public boolean isShown() {
+            return false;
+        }
+
+        @Override
+        public void dismiss() {
+
+        }
+
+        @Override
+        public void release() {
+
+        }
+
+        @Override
+        public boolean isFullyVisible() {
+            return false;
+        }
+
+        @Override
+        public boolean attachedToParent() {
+            return false;
+        }
+
+        @Override
+        public boolean onBackPressed() {
+            return false;
+        }
+
+        @Override
+        public boolean showDialog(Dialog dialog) {
+            return false;
+        }
+
+        @Override
+        public void setKeyboardHeightFromParent(int keyboardHeight) {
+
+        }
+
+        @Override
+        public int getNavigationBarColor(int color) {
+            return 0;
+        }
+
+        @Override
+        public void setOnDismissListener(Runnable onDismiss) {
+
+        }
+
+        public class WindowView extends SizeNotifierFrameLayout {
+
+            public WindowView(Context context) {
+                super(context);
+            }
+
+        }
+
+    }
+
 }
