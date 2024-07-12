@@ -1846,7 +1846,9 @@ R.string.CustomBackend))
                 final String phone = params.getString("phoneFormated");
                 if (r.play_integrity_nonce != null) {
                     IntegrityManager integrityManager = IntegrityManagerFactory.create(getContext());
-                    Task<IntegrityTokenResponse> integrityTokenResponse = integrityManager.requestIntegrityToken(IntegrityTokenRequest.builder().setNonce(Utilities.bytesToHex(r.play_integrity_nonce)).setCloudProjectNumber(760348033671L).build());
+                    final String nonce = new String(Base64.encode(r.play_integrity_nonce, Base64.URL_SAFE));
+                    FileLog.d("getting classic integrity with nonce = " + nonce);
+                    Task<IntegrityTokenResponse> integrityTokenResponse = integrityManager.requestIntegrityToken(IntegrityTokenRequest.builder().setNonce(nonce).setCloudProjectNumber(r.play_integrity_project_id).build());
                     integrityTokenResponse
                         .addOnSuccessListener(result -> {
                             final String token = result.token();
@@ -5875,7 +5877,6 @@ R.string.CustomBackend))
             addView(emailOutlineView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 58, 16, 24, 16, 0));
 
             // NekoX: Remove signInWithGoogleView.
-
         }
 
         @Override
@@ -9159,7 +9160,7 @@ R.string.CustomBackend))
 
             final int a = currentType == AUTH_TYPE_WORD ? 0 : 1;
             final String formattedPhone = "+" + PhoneFormat.getInstance().format(PhoneFormat.stripExceptNumbers(phone));
-            if (beginning == null) {
+            if (beginning == null || getConnectionsManager().isTestBackend()) {
                 confirmTextView.setText(AndroidUtilities.replaceTags(formatString(a == 0 ? R.string.SMSWordText : R.string.SMSPhraseText, formattedPhone)));
             } else {
                 confirmTextView.setText(AndroidUtilities.replaceTags(formatString(a == 0 ? R.string.SMSWordBeginningText : R.string.SMSPhraseBeginningText, formattedPhone, beginning)));
@@ -9580,7 +9581,7 @@ R.string.CustomBackend))
         }
 
         private boolean beginsOk(String text) {
-            if (beginning == null) {
+            if (beginning == null || getConnectionsManager().isTestBackend()) {
                 return true;
             }
             String lt = trimLeft(text).toLowerCase();
@@ -9641,7 +9642,7 @@ R.string.CustomBackend))
             }
             actionBar = null;
         }
-        clearStoryViewers();
+        clearSheets();
         parentLayout = null;
     }
 

@@ -14,12 +14,12 @@ repositories {
     }
 }
 
-def verName = "10.13.1"
-def verCode = 1181
+def verName = "10.14.3"
+def verCode = 1185
 
 
-def officialVer = "10.13.1"
-def officialCode = 4845
+def officialVer = "10.14.3"
+def officialCode = 4927
 
 def serviceAccountCredentialsFile = rootProject.file("service_account_credentials.json")
 
