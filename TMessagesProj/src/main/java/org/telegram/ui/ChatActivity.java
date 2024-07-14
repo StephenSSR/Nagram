@@ -897,6 +897,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     private boolean premiumInvoiceBot;
     private boolean showScrollToMessageError;
     private int startLoadFromMessageId;
+    private int startReplyTo;
     private int startLoadFromDate;
     private int startLoadFromMessageIdSaved;
     private int startLoadFromMessageOffset = Integer.MAX_VALUE;
@@ -2546,6 +2547,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         textToSet = arguments.getString("start_text");
         premiumInvoiceBot = arguments.getBoolean("premium_bot", false);
         startLoadFromMessageId = arguments.getInt("message_id", 0);
+        startReplyTo = arguments.getInt("reply_to", 0);
         startLoadFromDate = arguments.getInt("start_from_date", 0);
         startFromVideoTimestamp = arguments.getInt("video_timestamp", -1);
         threadUnreadMessagesCount = arguments.getInt("unread_count", 0);
@@ -20801,6 +20803,13 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             if (chatMode == MODE_SEARCH) {
                 updateSearchUpDownButtonVisibility(true);
             }
+            if (startReplyTo != 0) {
+                MessageObject msg = messagesDict[0].get(startReplyTo);
+                if (msg != null) {
+                    showFieldPanelForReply(msg);
+                    startReplyTo = 0;
+                }
+            }
         } else if (id == NotificationCenter.invalidateMotionBackground) {
             if (chatListView != null) {
                 chatListView.invalidateViews();
@@ -34074,8 +34083,14 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 }
                 final int finalTimestamp = timestamp;
 //                boolean noforwards = getMessagesController().isChatNoForwards(currentChat) || (messageObject != null && messageObject.messageOwner != null && messageObject.messageOwner.noforwards);
-                boolean noforwards = false;
-                builder.setItems(noforwards ? new CharSequence[] {LocaleController.getString("Open", R.string.Open)} : new CharSequence[]{LocaleController.getString("Open", R.string.Open), LocaleController.getString("Copy", R.string.Copy)}, (dialog, which) -> {
+                CharSequence[] items = new CharSequence[]{
+                        LocaleController.getString("Open", R.string.Open),
+                        LocaleController.getString("Copy", R.string.Copy),
+                        LocaleController.getString("ShareQRCode", R.string.ShareQRCode),
+                        LocaleController.getString("ShareMessages", R.string.ShareMessages)
+                };
+//                builder.setItems(noforwards ? new CharSequence[] {LocaleController.getString("Open", R.string.Open)} : new CharSequence[]{LocaleController.getString("Open", R.string.Open), LocaleController.getString("Copy", R.string.Copy)}, (dialog, which) -> {
+                builder.setItems(items, (dialog, which) -> {
                     if (which == 0) {
                         if (str.startsWith("video?")) {
                             didPressMessageUrl(url, false, messageObject, cell);
@@ -34083,7 +34098,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             logSponsoredClicked(messageObject);
                             openClickableLink(url, str, false, cell, messageObject, true);
                         }
-                    } else if (which == 1) {
+                    } else if (which == 1 || which == 3) {
+                        String urlFinal = str;
                         if (str.startsWith("video?") && messageObject != null && !messageObject.scheduled) {
                             MessageObject messageObject1 = messageObject;
                             boolean isMedia = messageObject.isVideo() || messageObject.isRoundVideo() || messageObject.isVoice() || messageObject.isMusic();
@@ -34120,21 +34136,36 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             if (link == null) {
                                 return;
                             }
-                            AndroidUtilities.addToClipboard(link);
+                            urlFinal = link;
+//                            AndroidUtilities.addToClipboard(link);
                         } else {
-                            AndroidUtilities.addToClipboard(str);
+//                            AndroidUtilities.addToClipboard(str);
                         }
-                        createUndoView();
-                        if (undoView == null) {
-                            return;
-                        }
-                        if (str.startsWith("@")) {
-                            undoView.showWithAction(0, UndoView.ACTION_USERNAME_COPIED, null);
-                        } else if (str.startsWith("#") || str.startsWith("$")) {
-                            undoView.showWithAction(0, UndoView.ACTION_HASHTAG_COPIED, null);
+                        if (which == 1) {
+                            AndroidUtilities.addToClipboard(urlFinal);
+                            createUndoView();
+                            if (undoView == null) {
+                                return;
+                            }
+                            if (str.startsWith("@")) {
+                                undoView.showWithAction(0, UndoView.ACTION_USERNAME_COPIED, null);
+                            } else if (str.startsWith("#") || str.startsWith("$")) {
+                                undoView.showWithAction(0, UndoView.ACTION_HASHTAG_COPIED, null);
+                            } else {
+                                undoView.showWithAction(0, UndoView.ACTION_LINK_COPIED, null);
+                            }
                         } else {
-                            undoView.showWithAction(0, UndoView.ACTION_LINK_COPIED, null);
+                            // ShareMessage
+                            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                            shareIntent.setType("text/plain");
+                            shareIntent.putExtra(Intent.EXTRA_TEXT, urlFinal);
+                            Intent chooserIntent = Intent.createChooser(shareIntent, LocaleController.getString("ShareFile", R.string.ShareFile));
+                            chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            ApplicationLoader.applicationContext.startActivity(chooserIntent);
                         }
+                    } else if (which == 2) {
+                        // QRCode
+                        ProxyUtil.showQrDialog(getParentActivity(), str);
                     }
                 });
                 builder.setOnPreDismissListener(di -> {
@@ -38159,7 +38190,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 }
                 if (!handled) {
                     try {
-                        AndroidUtilities.openForView(message, getParentActivity(), themeDelegate);
+                        AndroidUtilities.openForView(message, getParentActivity(), themeDelegate, false);
                     } catch (Exception e) {
                         FileLog.e(e);
                         alertUserOpenError(message);
@@ -41631,6 +41662,10 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         ).setDuration(8000).show(true);
     }
 
+    interface NagramCopyMesage {
+        void run(boolean isCopy);
+    }
+
     public void didLongPressLink(ChatMessageCell cell, MessageObject messageObject, CharacterStyle span, String str) {
         final ItemOptions options = ItemOptions.makeOptions(ChatActivity.this, cell, true);
         final ScrimOptions dialog = new ScrimOptions(getContext(), themeDelegate);
@@ -41655,7 +41690,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             });
         }
 
-        options.add(R.drawable.msg_copy, getString(R.string.CopyLink), () -> {
+        NagramCopyMesage run1 = (boolean isCopy) -> {
+            String urlFinal = str;
             if (str.startsWith("video?") && messageObject != null && !messageObject.scheduled) {
                 MessageObject messageObject1 = messageObject;
                 boolean isMedia = messageObject.isVideo() || messageObject.isRoundVideo() || messageObject.isVoice() || messageObject.isMusic();
@@ -41695,26 +41731,66 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 if (link == null) {
                     return;
                 }
-                AndroidUtilities.addToClipboard(link);
+                urlFinal = link;
+//                AndroidUtilities.addToClipboard(link);
             } else {
-                AndroidUtilities.addToClipboard(str);
+//                AndroidUtilities.addToClipboard(str);
             }
-            createUndoView();
-            if (undoView == null) {
-                return;
-            }
-            if (str.startsWith("@")) {
-                undoView.showWithAction(0, UndoView.ACTION_USERNAME_COPIED, null);
-            } else if (str.startsWith("#") || str.startsWith("$")) {
-                undoView.showWithAction(0, UndoView.ACTION_HASHTAG_COPIED, null);
+            if (isCopy) {
+                AndroidUtilities.addToClipboard(urlFinal);
+                createUndoView();
+                if (undoView == null) {
+                    return;
+                }
+                if (str.startsWith("@")) {
+                    undoView.showWithAction(0, UndoView.ACTION_USERNAME_COPIED, null);
+                } else if (str.startsWith("#") || str.startsWith("$")) {
+                    undoView.showWithAction(0, UndoView.ACTION_HASHTAG_COPIED, null);
+                } else {
+                    undoView.showWithAction(0, UndoView.ACTION_LINK_COPIED, null);
+                }
             } else {
-                undoView.showWithAction(0, UndoView.ACTION_LINK_COPIED, null);
+                // ShareMessage
+                Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                shareIntent.setType("text/plain");
+                shareIntent.putExtra(Intent.EXTRA_TEXT, urlFinal);
+                Intent chooserIntent = Intent.createChooser(shareIntent, LocaleController.getString("ShareFile", R.string.ShareFile));
+                chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ApplicationLoader.applicationContext.startActivity(chooserIntent);
             }
+        };
+        options.add(R.drawable.msg_copy, getString(R.string.CopyLink), () -> {
+            run1.run(true);
         });
+//        ----- Nagram Hook start -----
+        options.add(R.drawable.wallet_qr, getString("ShareQRCode", R.string.ShareQRCode), () -> {
+            // QRCode
+            ProxyUtil.showQrDialog(getParentActivity(), str);
+        });
+        options.add(R.drawable.msg_shareout, getString("ShareMessages", R.string.ShareMessages), () -> {
+            // ShareMessage
+            run1.run(false);
+        });
+//        ----- Nagram Hook end -----
 
         dialog.setItemOptions(options);
         if (span instanceof URLSpanReplacement) {
-            SpannableString s = new SpannableString(((URLSpanReplacement) span).getURL());
+            String formattedUrl = ((URLSpanReplacement) span).getURL();
+            try {
+                try {
+                    Uri uri = Uri.parse(formattedUrl);
+                    formattedUrl = Browser.replaceHostname(uri, IDN.toUnicode(uri.getHost(), IDN.ALLOW_UNASSIGNED));
+                } catch (Exception e) {
+                    FileLog.e(e, false);
+                }
+                formattedUrl = URLDecoder.decode(formattedUrl.replaceAll("\\+", "%2b"), "UTF-8");
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            if (formattedUrl.length() > 204) {
+                formattedUrl = formattedUrl.substring(0, 204) + "…";
+            }
+            SpannableString s = new SpannableString(formattedUrl);
             s.setSpan(span, 0, s.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             dialog.setScrim(cell, span, s);
         } else {
