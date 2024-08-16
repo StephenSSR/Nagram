@@ -277,6 +277,7 @@ elseif (${ANDROID_ABI} STREQUAL "arm64-v8a")
             rlottie/src/vector/pixman/pixman-arma64-neon-asm.S)
 endif ()
 
+
 #flac
 add_library(flac STATIC
         exoplayer/libFLAC/bitmath.c
@@ -484,6 +485,9 @@ target_include_directories(breakpad PUBLIC
 #voip
 include(${CMAKE_HOME_DIRECTORY}/voip/CMakeLists.txt)
 
+# verify
+include(${CMAKE_HOME_DIRECTORY}/integrity/CMakeLists.txt)
+
 set(NATIVE_LIB "tmessages.49")
 
 #tmessages
@@ -506,7 +510,8 @@ add_library(${NATIVE_LIB} SHARED
         exoplayer/ffmpeg_jni.cc
         fast-edge.cpp
         genann.c
-        secureid_ocr.cpp)
+        secureid_ocr.cpp
+)
 
 target_compile_options(${NATIVE_LIB} PUBLIC
         -ffast-math -Os -funroll-loops -ffast-math -fno-strict-aliasing -fno-math-errno)
@@ -787,6 +792,7 @@ target_link_libraries(${NATIVE_LIB}
         android
         OpenSLES
         cpufeatures
+        genuine
         breakpad)
 
 
